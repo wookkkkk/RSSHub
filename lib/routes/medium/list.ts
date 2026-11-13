@@ -1,8 +1,12 @@
-import { Route } from '@/types';
-import { config } from '@/config';
+import pMap from 'p-map';
 
-import parseArticle from './parse-article.js';
+import { config } from '@/config';
+import ConfigNotFoundError from '@/errors/types/config-not-found.js';
+import InvalidParameterError from '@/errors/types/invalid-parameter.js';
+import type { Route } from '@/types';
+
 import { getUserCatalogMainContentQuery } from './graphql.js';
+import parseArticle from './parse-article.js';
 
 export const route: Route = {
     path: '/list/:user/:catalogId',
@@ -20,11 +24,11 @@ export const route: Route = {
     name: 'List',
     maintainers: ['ImSingee'],
     handler,
-    description: `The List ID is the last part of the URL after \`-\`, for example, the username in [https://medium.com/@imsingee/list/collection-7e67004f23f9](https://medium.com/@imsingee/list/collection-7e67004f23f9) is \`imsingee\`, and the ID is \`7e67004f23f9\`.
+    description: `The List ID is the last part of the URL after \`-\`, for example, the username in <https://medium.com/@imsingee/list/collection-7e67004f23f9> is \`imsingee\`, and the ID is \`7e67004f23f9\`.
 
-  :::warning
-  To access private lists, only self-hosting is supported.
-  :::`,
+::: warning
+To access private lists, only self-hosting is supported.
+:::`,
 };
 
 async function handler(ctx) {
@@ -37,16 +41,16 @@ async function handler(ctx) {
     ctx.set('json', catalog);
 
     if (catalog && catalog.__typename === 'Forbidden') {
-        throw new Error(`无权访问 id 为 ${catalogId} 的 List（可能是未设置 Cookie 或 Cookie 已过期）`);
+        throw new ConfigNotFoundError(`无权访问 id 为 ${catalogId} 的 List（可能是未设置 Cookie 或 Cookie 已过期）`);
     }
     if (!catalog || !catalog.itemsConnection) {
-        throw new Error(`id 为 ${catalogId} 的 List 不存在`);
+        throw new InvalidParameterError(`id 为 ${catalogId} 的 List 不存在`);
     }
 
     const name = catalog.name;
-    const urls = catalog.itemsConnection.items.map((item) => item.entity.mediumUrl);
+    const urls: string[] = catalog.itemsConnection.items.map((item) => item.entity.mediumUrl);
 
-    const parsedArticles = await Promise.all(urls.map((url) => parseArticle(ctx, url)));
+    const parsedArticles = await pMap(urls, (url) => parseArticle(ctx, url), { concurrency: 3 });
 
     return {
         title: `List: ${name}`,

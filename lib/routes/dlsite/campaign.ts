@@ -1,6 +1,10 @@
-import { Route } from '@/types';
-import got from '@/utils/got';
 import { load } from 'cheerio';
+
+import InvalidParameterError from '@/errors/types/invalid-parameter';
+import type { Route } from '@/types';
+import got from '@/utils/got';
+
+import { getComicFeed } from './comipo';
 
 const host = 'https://www.dlsite.com';
 const infos = {
@@ -123,7 +127,16 @@ export const route: Route = {
     path: '/campaign/:type/:free?',
     categories: ['anime'],
     example: '/dlsite/campaign/home',
-    parameters: { type: 'Type, see table above', free: 'Free only, empty means false, other value means true' },
+    parameters: {
+        type: {
+            description: '类型',
+            options: Object.values(infos).map((info) => ({ value: info.type, label: info.name })),
+        },
+        free: {
+            description: '免费',
+            options: [{ value: '1', label: '是' }],
+        },
+    },
     features: {
         requireConfig: false,
         requirePuppeteer: false,
@@ -131,6 +144,7 @@ export const route: Route = {
         supportBT: false,
         supportPodcast: false,
         supportScihub: false,
+        nsfw: true,
     },
     name: 'Discounted Works',
     maintainers: ['cssxsh'],
@@ -141,36 +155,44 @@ async function handler(ctx) {
     const info = infos[ctx.req.param('type')];
     // 判断参数是否合理
     if (info === undefined) {
-        throw new Error('不支持指定类型！');
+        throw new InvalidParameterError('不支持指定类型！');
     }
-    if (ctx.req.param('free') !== undefined) {
-        info.params.is_free = 1;
+    if (info.type === 'comic') {
+        return getComicFeed(ctx, true);
     }
-    const link = setUrl(info);
 
-    const response = await got(link, {
+    const params = { ...info.params, ...(ctx.req.param('free') !== undefined && { is_free: 1 }) };
+    const link = setUrl({ ...info, params });
+
+    const response = await got(new URL(link, host), {
         method: 'GET',
-        prefixUrl: host,
     });
     const data = response.data;
     const $ = load(data);
+    $('img').each((_, element) => {
+        const image = $(element);
+        const src = image.attr(':src')?.match(/^is_show\s*\?\s*'((?:https?:)?\/\/[^']+)'/)?.[1];
+        if (src) {
+            image.attr('src', new URL(src, host).href);
+        }
+    });
 
     const title = `${info.name} | 割引中の作品`;
     const description = $('meta[name="description"]').attr('content');
     const list = $('tr[class]', '.n_worklist');
     const item = list.toArray().map((element) => {
-        const title = $('.work_name', element).text();
+        const title = $('.work_name > a', element).text();
         const link = $('.work_name > a', element).attr('href');
-        // 使链接
         $('a', element).each((_index, element) => {
             $(element).attr('target', '_blank');
         });
-        const description = $(element).html();
-        const arr = $('.search_tag', element);
-        const category = $('a', arr)
+        const category = $('.search_tag a, .work_category a, .work_genre span[title]', element)
             .toArray()
-            .map((a) => $(a).text());
+            .map((tag) => $(tag).text());
         const author = $('.maker_name', element).text();
+        const content = $(element);
+        content.find('.work_name, .maker_name, .search_tag, .work_category, .work_genre').remove();
+        const description = content.html();
 
         const signle = {
             title,
@@ -186,8 +208,7 @@ async function handler(ctx) {
         title,
         link: `${host}/${link}`,
         description,
-        language: 'ja-jp',
-        allowEmpty: true,
+        language: 'ja' as const,
         item,
     };
 }

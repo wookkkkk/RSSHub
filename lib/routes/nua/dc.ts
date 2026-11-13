@@ -1,4 +1,6 @@
-import { Route } from '@/types';
+import InvalidParameterError from '@/errors/types/invalid-parameter';
+import type { Route } from '@/types';
+
 import util from './utils';
 
 export const route: Route = {
@@ -16,20 +18,21 @@ export const route: Route = {
     },
     radar: [
         {
-            source: ['dc.nua.edu.cn/:type/list.htm'],
+            source: ['dc.nua.edu.cn/'],
+            target: '/dc/news',
         },
     ],
     name: 'School of Design',
     maintainers: ['evnydd0sf'],
     handler,
     description: `| News Type                | Parameters |
-  | ------------------------ | ---------- |
-  | 学院新闻 NEWS            | news       |
-  | 展览 EXHIBITION          | exhibition |
-  | 研创 RESEARCH & CREATION | rc         |
-  | 项目 PROJECT             | project    |
-  | 党团 PARTY               | party      |
-  | 后浪 YOUTH               | youth      |`,
+| ------------------------ | ---------- |
+| 学院新闻 NEWS            | news       |
+| 展览 EXHIBITION          | exhibition |
+| 研创 RESEARCH & CREATION | rc         |
+| 项目 PROJECT             | project    |
+| 党团 PARTY               | party      |
+| 后浪 YOUTH               | youth      |`,
 };
 
 async function handler(ctx) {
@@ -80,7 +83,7 @@ async function handler(ctx) {
             webPageName = 'ul.screen_4 .big_title';
             break;
         default:
-            throw new Error(`暂不支持对${type}的订阅`);
+            throw new InvalidParameterError(`暂不支持对${type}的订阅`);
     }
 
     const items = await util.ProcessList(baseUrl, baseUrl, listName, listDate, webPageName);
